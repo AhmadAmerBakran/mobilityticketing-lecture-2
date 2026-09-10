@@ -19,6 +19,12 @@ alter table products
     add constraint products_currency_format
         check (currency ~ '^[A-Z]{3}$');
 
+alter table users
+    alter column email set not null,
+    alter column is_disabled set not null,
+    add constraint users_email_unique
+        unique (email);
+
 alter table tickets
     alter column user_id set not null,
     alter column trip_id set not null,
@@ -34,7 +40,7 @@ alter table tickets
     add constraint tickets_identity_unique
         unique (id, ticket_code),
     add constraint tickets_status_allowed
-        check (status in ('Active', 'Validated', 'Expired', 'Cancelled', 'Refunded')),
+        check (status in ('Pending', 'Active', 'Validated', 'Cancelled', 'Expired')),
     add constraint tickets_price_non_negative
         check (price >= 0),
     add constraint tickets_currency_format
