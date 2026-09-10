@@ -10,13 +10,15 @@ The migration keeps the original starter DDL unchanged and adds the rules that c
 | Product name must be present | Direct constraint | `products.name` | `NOT NULL` | Missing values fail with `23502` | Migration |
 | Product price cannot be negative | Direct constraint | `products.price` | `NOT NULL`, `products_price_non_negative` | Invalid values fail with `23514` | Fail test 4 |
 | Currency must be present and use the same representation | Direct constraint | `products.currency`, `tickets.currency`, `payments.currency` | `NOT NULL` plus three-letter uppercase checks | This checks representation, not whether a code is an official ISO currency | Fail test 5 |
+| User email must be present and unique | Direct / unique rule | `users.email` | `NOT NULL`, `users_email_unique` | Missing email fails with `23502`; duplicate email fails with `23505` | Fail tests 20-21 |
+| User disabled state must be known | Direct constraint | `users.is_disabled` | `NOT NULL` | A missing flag fails with `23502`; this does not decide what disabled users are allowed to do | Fail test 22 |
 | A ticket must belong to an existing user | Direct constraint | `tickets.user_id` | `NOT NULL`, `tickets_user_fk` | Unknown users fail with `23503` | Fail test 7 |
 | A ticket must refer to an existing trip | Direct constraint | `tickets.trip_id` | `NOT NULL`, `tickets_trip_fk` | Unknown trips fail with `23503` | Fail test 6 |
 | A ticket must refer to an existing product | Direct constraint | `tickets.product_code` | `NOT NULL`, `tickets_product_fk` | Unknown products fail with `23503` | Fail test 8 |
 | Ticket codes must identify one ticket | Unique rule | `tickets.ticket_code` | `NOT NULL`, `tickets_ticket_code_unique` | Duplicate codes fail with `23505` | Fail test 10 |
 | Ticket validity cannot end before it begins | Direct constraint | `tickets.valid_from_utc`, `tickets.valid_to_utc` | `NOT NULL`, `tickets_validity_window_valid` | Reversed windows fail with `23514` | Fail test 9 |
 | Ticket price cannot be negative | Direct constraint | `tickets.price` | `NOT NULL`, `tickets_price_non_negative` | Invalid values fail with `23514` | Fail test 12 |
-| Ticket status must be known | Direct constraint | `tickets.status` | `tickets_status_allowed` | Unknown values fail with `23514` | Fail test 11 |
+| Ticket status must be known | Direct constraint | `tickets.status` | `tickets_status_allowed` | Accepted values are `Pending`, `Active`, `Validated`, `Cancelled`, and `Expired`; anything else fails with `23514` | Pass test and fail test 11 |
 | A payment must refer to existing rows | Direct constraint | `payments.user_id`, `payments.ticket_id` | `NOT NULL`, `payments_user_fk`, `payments_ticket_fk` | Unknown references fail with `23503` | Fail test 13 |
 | Payment amount cannot be negative | Direct constraint | `payments.amount` | `NOT NULL`, `payments_amount_non_negative` | Invalid values fail with `23514` | Fail test 14 |
 | Captured payments need an external reference | Direct constraint | `payments.status`, `payments.external_payment_reference` | `payments_captured_reference_required` | A captured payment without a reference fails with `23514` | Fail test 15 |
@@ -26,7 +28,7 @@ The migration keeps the original starter DDL unchanged and adds the rules that c
 | A recorded validation stop must exist | Direct constraint | `validations.stop_id` | `validations_stop_fk` | An unknown non-null stop fails with `23503` | Fail test 19 |
 | A trip must never be oversold by concurrent purchases | More than one write / transaction rule | `trips.reserved_seats` and the purchase workload | Not solved by this migration | Two writers can observe the same remaining seat before either update commits | Issue 1 |
 | Payment capture and local persistence must agree | External system / transaction rule | Payment gateway and `payments` | Unique reference reduces duplicate rows | A constraint cannot make the gateway call and database commit atomic | Issue 2 |
-| Disabled users may or may not be allowed to buy | Ambiguous domain decision | `users.is_disabled`, purchase workflow | No constraint added | The case must define the rule before it is enforced | Issue 3 |
+| Disabled users may or may not be allowed to buy | Ambiguous domain decision | `users.is_disabled`, purchase workflow | The flag is required, but no purchase-rule constraint is added | The case must define the behaviour before it is enforced | Issue 3 |
 
 The status sets used in this lab are intentionally small and case-sensitive. If the lifecycle gets more states later, that should be an explicit domain and schema change rather than accepting arbitrary text.
 
@@ -52,9 +54,9 @@ The status sets used in this lab are intentionally small and case-sensitive. If 
 
 ### Issue 3 - disabled users
 
-- Evidence: the schema has `users.is_disabled`, but the case does not define the effect on purchases or existing tickets.
-- Problem: adding a constraint now would make a domain decision that has not been specified.
-- Consequence: the rule remains application/domain policy for now.
+- Evidence: `users.is_disabled` is now required, so every user has a stored disabled state.
+- Problem: the case still does not define what that state means for purchases or existing tickets.
+- Consequence: the flag is structurally reliable, but the purchase rule remains application/domain policy for now.
 - Specific improvement: decide the intended behaviour before adding enforcement.
 - Open question: whether disabling a user only blocks new purchases or also affects existing tickets.
 
@@ -91,12 +93,12 @@ Primary and referenced identifiers are not cascaded on update. Changing an ident
 
 ## Test evidence
 
-`database/postgres/experiments/constraints_should_pass.sql` contains a valid purchase and validation path. It runs inside a transaction and rolls the test data back at the end.
+`database/postgres/experiments/constraints_should_pass.sql` contains valid user data, a `Pending` ticket, and a valid purchase and validation path. It runs inside a transaction and rolls the test data back at the end.
 
-`database/postgres/experiments/constraints_should_fail.sql` contains the rejected writes. Each case states the expected SQLSTATE and named constraint so the failure is tied to a specific invariant instead of an English error message.
+`database/postgres/experiments/constraints_should_fail.sql` contains the rejected writes. Each case states the expected SQLSTATE and named constraint, or the affected column for `NOT NULL`, so the failure is tied to a specific invariant instead of an English error message.
 
 ## What writers can rely on
 
-After the migration, every writer can rely on the database to reject negative capacities and monetary amounts, impossible seat counts, unknown ticket relationships, duplicate ticket codes, reversed ticket validity windows, invalid stored status values, duplicated external payment references, and mismatched validation ticket identities.
+After the migration, every writer can rely on the database to reject negative capacities and monetary amounts, impossible seat counts, unknown ticket relationships, duplicate ticket codes, reversed ticket validity windows, invalid stored status values, duplicated external payment references, mismatched validation ticket identities, missing user email or disabled state, and duplicate user email addresses.
 
-The database still does not guarantee transaction-level rules such as concurrent overselling or agreement with an external payment gateway.
+The database still does not guarantee transaction-level rules such as concurrent overselling, the business meaning of a disabled user, or agreement with an external payment gateway.
