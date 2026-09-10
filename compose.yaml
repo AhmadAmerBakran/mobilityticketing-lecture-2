@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: mobility
+      POSTGRES_USER: mobility
+      POSTGRES_PASSWORD: mobility
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./database/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mobility -d mobility"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
