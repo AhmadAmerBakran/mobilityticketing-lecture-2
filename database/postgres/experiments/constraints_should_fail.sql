@@ -154,3 +154,21 @@ insert into validations (
     'VALIDATION-BAD-STOP', 'TICKET-1', 'CODE-M2-0001',
     'METRO-M2-01', 'STOP-DOES-NOT-EXIST', 'DEVICE-01', 'Accepted'
 );
+
+-- 20. User email is required.
+-- Expected: 23502 (not_null_violation), users.email
+insert into users (id, email, full_name, is_disabled) values (
+    'USER-NO-EMAIL', null, 'No Email', false
+);
+
+-- 21. User email must be unique.
+-- Expected: 23505 (unique_violation), users_email_unique
+insert into users (id, email, full_name, is_disabled) values (
+    'USER-DUPLICATE-EMAIL', 'anna@example.test', 'Duplicate Email', false
+);
+
+-- 22. Disabled state is required.
+-- Expected: 23502 (not_null_violation), users.is_disabled
+insert into users (id, email, full_name, is_disabled) values (
+    'USER-NO-DISABLED-STATE', 'state@example.test', 'Missing State', null
+);
